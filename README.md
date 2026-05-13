@@ -1,38 +1,41 @@
-# ML-NIDS (Rule-Based MVP)
+# ML-NIDS (правил-ориентированный MVP)
 
-This project is a minimal Network IDS that collects packets on the agent side and
-analyzes them in a FastAPI backend using signature/threshold rules. The design is
-modular so an ML detector can be added later.
+Минимальная Network IDS: агент собирает и агрегирует пакеты, анализатор на FastAPI
+применяет правила (сигнатуры/пороги) и пишет события в InfluxDB. Архитектура
+модульная, чтобы позже добавить ML-детектор.
 
-## Components
+## Компоненты
 
-- `agent/`: Scapy sniffer that aggregates packets into short flows and sends batches.
-- `analyzer/`: FastAPI app with RuleEngine and InfluxDB writer.
+- `agent/`: Scapy sniffer, агрегирует пакеты в короткие flow-записи и отправляет батчи.
+- `analyzer/`: FastAPI приложение с RuleEngine и записью в InfluxDB.
 
-## Quickstart (Docker)
+## Быстрый старт (Docker)
 
-1. Update secrets in `docker-compose.yml` (`INFLUXDB_*`, `API_KEY`).
-2. Run:
+1. Обнови секреты в `docker-compose.yml` (`INFLUXDB_*`, `API_KEY`).
+2. Запусти:
 
 ```bash
 docker compose up --build
 ```
 
-3. Check health:
+3. Проверка готовности:
 
 ```bash
 curl http://localhost:8000/health
 ```
 
-## Agent (Linux)
+## Агент (Linux)
 
-Install dependencies:
+Scapy требует права на захват пакетов, поэтому агент запускается под root и
+ориентирован на Linux.
+
+Установка зависимостей:
 
 ```bash
 pip install -r agent/requirements.txt
 ```
 
-Run directly:
+Запуск вручную:
 
 ```bash
 sudo BACKEND_URL=http://127.0.0.1:8000/api/v1/traffic \
@@ -40,11 +43,11 @@ sudo BACKEND_URL=http://127.0.0.1:8000/api/v1/traffic \
 	python agent/sniffer.py
 ```
 
-Or install `agent/ids-agent.service` as a systemd service on Debian/Ubuntu.
+Или установи `agent/ids-agent.service` как systemd-сервис на Debian/Ubuntu.
 
 ## API
 
-POST `/api/v1/traffic` accepts a batch of flow records:
+POST `/api/v1/traffic` принимает батч flow-записей:
 
 ```json
 {
@@ -69,9 +72,9 @@ POST `/api/v1/traffic` accepts a batch of flow records:
 }
 ```
 
-If `API_KEY` is set on the analyzer, clients must send `X-API-Key` with the same value.
+Если задан `API_KEY` на анализаторе, клиент должен передавать `X-API-Key` с тем же значением.
 
-## Tests
+## Тесты
 
 ```bash
 pip install -r analyzer/requirements-dev.txt
