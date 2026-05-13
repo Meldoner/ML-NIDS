@@ -12,6 +12,7 @@ services:
       - INFLUXDB_TOKEN=change_me_token
       - INFLUXDB_ORG=change_me_org
       - INFLUXDB_BUCKET=change_me_bucket
+      - API_KEY=change_me_api_key
     depends_on:
       - influxdb
 

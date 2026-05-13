@@ -33,7 +33,7 @@ class SynFloodRule(BaseRule):
 		self.threshold = threshold
 		self.window_seconds = window_seconds
 		self.state_ttl = state_ttl
-		self.syn_events: Dict[str, Deque[float]] = {}
+		self.syn_events: Dict[str, Deque[Tuple[float, int]]] = {}
 		self.last_seen: Dict[str, float] = {}
 		self.last_alert: Dict[str, float] = {}
 
@@ -42,32 +42,36 @@ class SynFloodRule(BaseRule):
 			return None
 
 		flags = packet.get("tcp_flags") or ""
-		if "S" not in flags or "A" in flags:
-			return None
-
 		src_ip = packet.get("src_ip")
 		timestamp = float(packet.get("timestamp", 0))
 		if not src_ip or not timestamp:
 			return None
 
+		syn_count = int(packet.get("syn_count") or 0)
+		if syn_count <= 0:
+			if "S" not in flags or "A" in flags:
+				return None
+			syn_count = 1
+
 		events = self.syn_events.setdefault(src_ip, deque())
-		events.append(timestamp)
+		events.append((timestamp, syn_count))
 		self.last_seen[src_ip] = timestamp
 
 		cutoff = timestamp - self.window_seconds
-		while events and events[0] < cutoff:
+		while events and events[0][0] < cutoff:
 			events.popleft()
 
 		self._cleanup(timestamp)
 
-		if len(events) > self.threshold:
+		total_syn = sum(count for _, count in events)
+		if total_syn > self.threshold:
 			last_alert_time = self.last_alert.get(src_ip, 0)
 			if timestamp - last_alert_time >= self.window_seconds:
 				self.last_alert[src_ip] = timestamp
 				message = (
-					f"Possible SYN flood: {len(events)} SYN packets in {self.window_seconds}s"
+					f"Possible SYN flood: {total_syn} SYN packets in {self.window_seconds}s"
 				)
-				return self._build_alert(packet, message, {"syn_count": len(events)})
+				return self._build_alert(packet, message, {"syn_count": total_syn})
 
 		return None
 

@@ -76,15 +76,21 @@ class InfluxDBWriter:
 		points: list[Point] = []
 		for packet in packets:
 			data = self._to_dict(packet)
+			packet_count = int(data.get("packet_count") or 1)
+			payload_bytes = data.get("payload_bytes")
 			point = (
 				Point("traffic")
 				.tag("protocol", data.get("protocol", "UNKNOWN"))
 				.tag("src_ip", data.get("src_ip", ""))
 				.tag("dst_ip", data.get("dst_ip", ""))
 				.field("payload_size", int(data.get("payload_size", 0)))
+				.field("packet_count", packet_count)
 				.field("src_port", int(data.get("src_port") or 0))
 				.field("dst_port", int(data.get("dst_port") or 0))
 			)
+
+			if payload_bytes is not None:
+				point.field("payload_bytes", int(payload_bytes))
 
 			timestamp = float(data.get("timestamp", 0))
 			if timestamp:
