@@ -1,0 +1,125 @@
+@startuml IDS_Enterprise_Architecture
+skinparam packageStyle rectangle
+skinparam componentStyle rectangle
+skinparam linetype ortho
+skinparam backgroundColor #FFFFFF
+
+title Network IDS Architecture - Academic to Production Grade
+
+' =======================================================
+' DATA CAPTURE LAYER (AGENT)
+' =======================================================
+package "Traffic Capture Layer (Agent)" <<Infrastructure>> #FFF9C4 {
+    
+    class SnifferEngine {
+        - interface : string
+        - filter : string
+        - isRunning : bool
+        + StartCapture()
+        + StopCapture()
+        - OnPacketReceived(packet)
+    }
+    
+    class FlowAggregator {
+        - windowSize : int
+        - activeFlows : map[FlowKey]Flow
+        + ProcessPacket(packet)
+        + GetExpiredFlows() : []Flow
+        - CalculateStats(flow)
+    }
+    
+    class AgentReporter {
+        - targetUrl : string
+        - batchBuffer : []Flow
+        + SendBatch(flows)
+        + RetryPolicy()
+    }
+}
+
+' =======================================================
+' CORE ANALYZER SYSTEM (DOCKER)
+' =======================================================
+package "Core Analyzer System (FastAPI)" <<Component>> #E8F5E9 {
+
+    class AnalyzerCore {
+        - config : Config
+        - detectorPipeline : DetectorPipeline
+        - alertPublisher : AlertPublisher
+        - metrics : MetricsExporter
+        + HandleTrafficData(data)
+        + ProcessAlerts()
+    }
+
+    interface IDetector {
+        + Detect(flow) : Alert?
+    }
+
+    class DetectorPipeline {
+        - engines : []IDetector
+        + AddDetector(engine)
+        + RunAll(flow) : []Alert
+    }
+
+    class RuleEngine implements IDetector {
+        - rules : []BaseRule
+        + Detect(flow) : Alert?
+    }
+    
+    class MLEngine implements IDetector {
+        - model : MLModel
+        + Detect(flow) : Alert?
+        + GetConfidenceScore() : float
+    }
+}
+
+' =======================================================
+' DETECTION MODULES (RULE-BASED)
+' =======================================================
+package "Rule Definitions" <<Logic>> #E3F2FD {
+
+    abstract class BaseRule {
+        + threshold : int
+        + {abstract} Check(flow) : bool
+    }
+
+    class SynFloodRule extends BaseRule {
+        + Check(flow) : bool
+    }
+
+    class PortScanRule extends BaseRule {
+        + Check(flow) : bool
+    }
+
+    class TrafficVolumeRule extends BaseRule {
+        + Check(flow) : bool
+    }
+}
+
+' =======================================================
+' STATE & PERSISTENCE
+' =======================================================
+package "State Management" <<Database>> #FCE4EC {
+
+    class InfluxDBWriter {
+        - client : InfluxClient
+        + WriteMetric(point)
+        + WriteAlert(alert)
+    }
+}
+
+' =======================================================
+' RELATIONSHIPS
+' =======================================================
+
+SnifferEngine --> FlowAggregator : Raw Packets
+FlowAggregator --> AgentReporter : Aggregated Flows
+AgentReporter ..> AnalyzerCore : HTTP/POST (JSON)
+
+AnalyzerCore *-- DetectorPipeline
+DetectorPipeline o-- RuleEngine
+DetectorPipeline o-- MLEngine
+
+RuleEngine *-- BaseRule
+AnalyzerCore --> InfluxDBWriter : Store Results
+
+@enduml
