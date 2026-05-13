@@ -55,6 +55,11 @@ def verify_api_key(x_api_key: Optional[str] = Header(default=None)) -> None:
 		raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid API key")
 
 
+@app.get("/health")
+def health() -> Dict[str, Any]:
+	return {"status": "ok", "influx_enabled": influx_writer.enabled}
+
+
 @app.post("/api/v1/traffic")
 def ingest_traffic(batch: PacketBatch, _: None = Depends(verify_api_key)) -> Dict[str, Any]:
 	alerts: List[Alert] = []
