@@ -86,11 +86,35 @@ package "Rule Definitions" <<Logic>> #E3F2FD {
         + Check(flow) : bool
     }
 
+    class SynAckImbalanceRule extends BaseRule {
+        + Check(flow) : bool
+    }
+
     class PortScanRule extends BaseRule {
         + Check(flow) : bool
     }
 
-    class TrafficVolumeRule extends BaseRule {
+    class HorizontalScanRule extends BaseRule {
+        + Check(flow) : bool
+    }
+
+    class MultiTargetScanRule extends BaseRule {
+        + Check(flow) : bool
+    }
+
+    class UdpFloodRule extends BaseRule {
+        + Check(flow) : bool
+    }
+
+    class IcmpFloodRule extends BaseRule {
+        + Check(flow) : bool
+    }
+
+    class LargeIcmpRule extends BaseRule {
+        + Check(flow) : bool
+    }
+
+    class TcpFlagAnomalyRule extends BaseRule {
         + Check(flow) : bool
     }
 }
@@ -104,6 +128,12 @@ package "State Management" <<Database>> #FCE4EC {
         - client : InfluxClient
         + WriteMetric(point)
         + WriteAlert(alert)
+    }
+
+    class RedisCache {
+        - client : RedisClient
+        + Get(key)
+        + Set(key, value, ttl)
     }
 }
 
@@ -121,5 +151,6 @@ DetectorPipeline o-- MLEngine
 
 RuleEngine *-- BaseRule
 AnalyzerCore --> InfluxDBWriter : Store Results
+RuleEngine ..> RedisCache : Phase 2 state
 
 @enduml
