@@ -1,41 +1,81 @@
-# ML-NIDS (правил-ориентированный MVP)
+# ML-NIDS (rule-based MVP)
 
-Минимальная Network IDS: агент собирает и агрегирует пакеты, анализатор на FastAPI
-применяет правила (сигнатуры/пороги) и пишет события в InfluxDB. Архитектура
-модульная, чтобы позже добавить ML-детектор.
+Network IDS уровня MVP: агент собирает и агрегирует пакеты, анализатор на FastAPI
+применяет rule-based правила и записывает события в InfluxDB. Архитектура
+модульная и предусматривает расширение до ML-детектора.
+
+## Возможности
+
+- Захват трафика и flow-агрегация на агенте.
+- RuleEngine с набором правил: SynFlood, SynAckImbalance, PortScan,
+	HorizontalScan, MultiTargetScan, UdpFlood, IcmpFlood, LargeIcmp, TcpFlagAnomaly.
+- Наблюдаемость: InfluxDB + Grafana.
+- Опциональная аутентификация по API ключу.
+
+## Документация
+
+- Подробная инструкция запуска и тестирования: [USAGE.md](USAGE.md)
+- Архитектура по arc42: [docs/architecture-arc42.md](docs/architecture-arc42.md)
+- Диаграмма: [docs/diagram.puml](docs/diagram.puml)
 
 ## Компоненты
 
 - `agent/`: Scapy sniffer, агрегирует пакеты в короткие flow-записи и отправляет батчи.
 - `analyzer/`: FastAPI приложение с RuleEngine и записью в InfluxDB.
+- `docker-compose.yml`: InfluxDB и Grafana для хранения и визуализации.
 
-## Быстрый старт (Docker)
+## Требования
 
-1. Обнови секреты в `docker-compose.yml` (`INFLUXDB_*`, `API_KEY`).
-2. Запусти:
+- Linux для агента (нужны права на захват пакетов).
+- Docker и Docker Compose для анализатора, InfluxDB и Grafana.
+- Python 3.10+ для агента.
+
+## Запуск (кратко)
+
+Конфигурация задается в [docker-compose.yml](docker-compose.yml) через `INFLUXDB_*` и `API_KEY`.
+Запуск инфраструктуры выполняется командой:
 
 ```bash
 docker compose up --build
 ```
 
-3. Проверка готовности:
+Проверка доступности API:
 
 ```bash
 curl http://localhost:8000/health
 ```
 
+## Переменные окружения
+
+Analyzer (обычно задаются в [docker-compose.yml](docker-compose.yml)):
+
+| Переменная | Значение по умолчанию | Назначение | Обязательная |
+| --- | --- | --- | --- |
+| `INFLUXDB_URL` | `http://localhost:8086` | URL InfluxDB | Да |
+| `INFLUXDB_TOKEN` | — | Токен доступа InfluxDB | Да |
+| `INFLUXDB_ORG` | — | Организация InfluxDB | Да |
+| `INFLUXDB_BUCKET` | — | Bucket для записи | Да |
+| `INFLUX_WRITE_TRAFFIC` | `1` | Запись метрик трафика (`1`/`0`) | Нет |
+| `API_KEY` | — | API ключ для входящих запросов | Нет |
+
+Agent (задаются при запуске или в systemd):
+
+| Переменная | Значение по умолчанию | Назначение | Обязательная |
+| --- | --- | --- | --- |
+| `BACKEND_URL` | `http://127.0.0.1:8000/api/v1/traffic` | URL анализатора | Да |
+| `BACKEND_API_KEY` | — | API ключ для запросов к анализатору | Нет |
+| `API_KEY_HEADER` | `X-API-Key` | Заголовок API ключа | Нет |
+| `SNIFF_INTERFACE` | — | Интерфейс захвата (например, `eth0`) | Да |
+| `BPF_FILTER` | `ip` | BPF фильтр трафика | Нет |
+| `BATCH_INTERVAL` | `1.5` | Интервал отправки батча (сек) | Нет |
+| `BATCH_MAX_SIZE` | `500` | Максимальный размер батча | Нет |
+| `MAX_BUFFER_SIZE` | `5000` | Максимальный размер буфера | Нет |
+| `CONNECT_TIMEOUT` | `3` | Таймаут подключения (сек) | Нет |
+| `READ_TIMEOUT` | `5` | Таймаут чтения (сек) | Нет |
+
 ## Агент (Linux)
 
-Scapy требует права на захват пакетов, поэтому агент запускается под root и
-ориентирован на Linux.
-
-Установка зависимостей:
-
-```bash
-pip install -r agent/requirements.txt
-```
-
-Запуск вручную:
+Агент запускается от root из-за требований Scapy к захвату пакетов. Пример запуска:
 
 ```bash
 sudo BACKEND_URL=http://127.0.0.1:8000/api/v1/traffic \
@@ -43,7 +83,7 @@ sudo BACKEND_URL=http://127.0.0.1:8000/api/v1/traffic \
 	python agent/sniffer.py
 ```
 
-Или установи `agent/ids-agent.service` как systemd-сервис на Debian/Ubuntu.
+Альтернативно используется systemd-шаблон: [agent/ids-agent.service](agent/ids-agent.service).
 
 ## API
 
@@ -72,12 +112,18 @@ POST `/api/v1/traffic` принимает батч flow-записей:
 }
 ```
 
-Если задан `API_KEY` на анализаторе, клиент должен передавать `X-API-Key` с тем же значением.
+Если задан `API_KEY` на анализаторе, клиент передает `X-API-Key` с тем же значением.
 
 ## Тесты
+
+Unit-тесты правил выполняются из каталога анализатора:
 
 ```bash
 pip install -r analyzer/requirements-dev.txt
 cd analyzer
 pytest
 ```
+
+## Лицензия
+
+Проект распространяется на условиях MIT: [LICENSE](LICENSE)
