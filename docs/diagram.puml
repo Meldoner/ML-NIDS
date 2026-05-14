@@ -1,156 +1,91 @@
-@startuml IDS_Enterprise_Architecture
+@startuml IDS_MVP_Architecture
 skinparam packageStyle rectangle
 skinparam componentStyle rectangle
 skinparam linetype ortho
 skinparam backgroundColor #FFFFFF
 
-title Network IDS Architecture - Academic to Production Grade
+title Network IDS Architecture - MVP (Agent + Docker Stack)
 
 ' =======================================================
-' DATA CAPTURE LAYER (AGENT)
+' HOST OS (AGENT)
 ' =======================================================
-package "Traffic Capture Layer (Agent)" <<Infrastructure>> #FFF9C4 {
-    
-    class SnifferEngine {
-        - interface : string
-        - filter : string
-        - isRunning : bool
-        + StartCapture()
-        + StopCapture()
-        - OnPacketReceived(packet)
-    }
-    
-    class FlowAggregator {
-        - windowSize : int
-        - activeFlows : map[FlowKey]Flow
-        + ProcessPacket(packet)
-        + GetExpiredFlows() : []Flow
-        - CalculateStats(flow)
-    }
-    
-    class AgentReporter {
-        - targetUrl : string
-        - batchBuffer : []Flow
-        + SendBatch(flows)
-        + RetryPolicy()
+package "Host OS (Linux)" <<Deployment>> {
+    node "Server Host" {
+        component "Systemd Service\nids-agent.service" as Systemd
+        component "IDS Agent\nsniffer.py" as Agent
+        component "Network Interface\neth0/lo" as NIC
     }
 }
 
-' =======================================================
-' CORE ANALYZER SYSTEM (DOCKER)
-' =======================================================
-package "Core Analyzer System (FastAPI)" <<Component>> #E8F5E9 {
-
-    class AnalyzerCore {
-        - config : Config
-        - detectorPipeline : DetectorPipeline
-        - alertPublisher : AlertPublisher
-        - metrics : MetricsExporter
-        + HandleTrafficData(data)
-        + ProcessAlerts()
-    }
-
-    interface IDetector {
-        + Detect(flow) : Alert?
-    }
-
-    class DetectorPipeline {
-        - engines : []IDetector
-        + AddDetector(engine)
-        + RunAll(flow) : []Alert
-    }
-
-    class RuleEngine implements IDetector {
-        - rules : []BaseRule
-        + Detect(flow) : Alert?
-    }
-    
-    class MLEngine implements IDetector {
-        - model : MLModel
-        + Detect(flow) : Alert?
-        + GetConfidenceScore() : float
-    }
+package "Agent Internals" <<Component>> {
+    component "SnifferEngine" as SnifferEngine
+    component "FlowAggregator" as FlowAggregator
+    component "AgentReporter" as AgentReporter
 }
 
 ' =======================================================
-' DETECTION MODULES (RULE-BASED)
+' DOCKER COMPOSE STACK
 ' =======================================================
-package "Rule Definitions" <<Logic>> #E3F2FD {
-
-    abstract class BaseRule {
-        + threshold : int
-        + {abstract} Check(flow) : bool
+package "Docker Compose Stack" <<Deployment>> {
+    node "analyzer container" as AnalyzerContainer {
+        component "FastAPI\n/api/v1/traffic" as API
+        component "RuleEngine" as RuleEngine
+        component "InfluxDBWriter" as Writer
     }
 
-    class SynFloodRule extends BaseRule {
-        + Check(flow) : bool
+    node "influxdb container" as InfluxContainer {
+        database "InfluxDB 2.x" as Influx
     }
 
-    class SynAckImbalanceRule extends BaseRule {
-        + Check(flow) : bool
+    node "grafana container" as GrafanaContainer {
+        component "Grafana Dashboard" as Grafana
     }
 
-    class PortScanRule extends BaseRule {
-        + Check(flow) : bool
-    }
-
-    class HorizontalScanRule extends BaseRule {
-        + Check(flow) : bool
-    }
-
-    class MultiTargetScanRule extends BaseRule {
-        + Check(flow) : bool
-    }
-
-    class UdpFloodRule extends BaseRule {
-        + Check(flow) : bool
-    }
-
-    class IcmpFloodRule extends BaseRule {
-        + Check(flow) : bool
-    }
-
-    class LargeIcmpRule extends BaseRule {
-        + Check(flow) : bool
-    }
-
-    class TcpFlagAnomalyRule extends BaseRule {
-        + Check(flow) : bool
-    }
+    node "docker volumes" as Volumes
 }
 
 ' =======================================================
-' STATE & PERSISTENCE
+' RULE SET (CURRENT)
 ' =======================================================
-package "State Management" <<Database>> #FCE4EC {
+package "Rule Set" <<Logic>> {
+    interface "BaseRule" as BaseRule
 
-    class InfluxDBWriter {
-        - client : InfluxClient
-        + WriteMetric(point)
-        + WriteAlert(alert)
-    }
-
-    class RedisCache {
-        - client : RedisClient
-        + Get(key)
-        + Set(key, value, ttl)
-    }
+    component SynFloodRule
+    component SynAckImbalanceRule
+    component PortScanRule
+    component HorizontalScanRule
+    component MultiTargetScanRule
+    component UdpFloodRule
+    component IcmpFloodRule
+    component LargeIcmpRule
+    component TcpFlagAnomalyRule
 }
+
+' =======================================================
+' ACTORS
+' =======================================================
+cloud "External Clients" as Clients
+actor "User" as User
 
 ' =======================================================
 ' RELATIONSHIPS
 ' =======================================================
-
+Clients --> NIC : Network traffic
+Systemd --> Agent : Start/Stop
+Agent ..> SnifferEngine
 SnifferEngine --> FlowAggregator : Raw Packets
-FlowAggregator --> AgentReporter : Aggregated Flows
-AgentReporter ..> AnalyzerCore : HTTP/POST (JSON)
+FlowAggregator --> AgentReporter : Flow Batches
+AgentReporter ..> API : HTTP/JSON (+ API key)
 
-AnalyzerCore *-- DetectorPipeline
-DetectorPipeline o-- RuleEngine
-DetectorPipeline o-- MLEngine
+API --> RuleEngine : Validate + Detect
+RuleEngine ..> BaseRule
+RuleEngine --> Writer : Alerts + Metrics
+Writer --> Influx : Write
 
-RuleEngine *-- BaseRule
-AnalyzerCore --> InfluxDBWriter : Store Results
-RuleEngine ..> RedisCache : Phase 2 state
+Grafana --> Influx : Read
+User --> Grafana : Dashboards
+
+InfluxContainer --> Volumes
+GrafanaContainer --> Volumes
 
 @enduml
