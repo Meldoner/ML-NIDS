@@ -1,0 +1,139 @@
+@startuml ML_NIDS_Class_Diagram
+skinparam classAttributeIconSize 0
+skinparam packageStyle rectangle
+skinparam linetype ortho
+skinparam backgroundColor #FFFFFF
+skinparam nodesep 20
+skinparam ranksep 20
+hide empty members
+top to bottom direction
+
+title ML-NIDS Class Diagram
+
+package "analyzer.main" {
+  class PacketData {
+    +timestamp: float
+    +first_seen: float?
+    +last_seen: float?
+    +src_ip: str
+    +dst_ip: str
+    +src_port: int?
+    +dst_port: int?
+    +protocol: str
+    +tcp_flags: str?
+    +payload_size: int
+    +packet_count: int?
+    +payload_bytes: int?
+    +syn_count: int?
+    +ack_count: int?
+  }
+
+  class PacketBatch {
+    +packets: List[PacketData]
+  }
+
+  class Alert {
+    +timestamp: float
+    +rule: str
+    +severity: str
+    +message: str
+    +src_ip: str?
+    +dst_ip: str?
+    +src_port: int?
+    +dst_port: int?
+    +metadata: dict
+  }
+
+  class AnalyzerAPI <<module>> {
+    +health(): dict
+    +ingest_traffic(batch: PacketBatch): dict
+    +verify_api_key(x_api_key: str?): None
+  }
+}
+
+package "analyzer.rules" {
+  abstract class BaseRule {
+    +name: str
+    +severity: str
+    +description: str
+    +check(packet: dict): dict?
+    #_build_alert(packet: dict, message: str, metadata: dict?): dict
+  }
+
+  class SynFloodRule
+  class SynAckImbalanceRule
+  class PortScanRule
+  class HorizontalScanRule
+  class MultiTargetScanRule
+  class UdpFloodRule
+  class IcmpFloodRule
+  class LargeIcmpRule
+  class TcpFlagAnomalyRule
+
+  class RuleEngine {
+    +rules: List[BaseRule]
+    +process_packet(packet: dict): List[dict]
+  }
+}
+
+package "analyzer.influx_writer" {
+  class InfluxDBWriter {
+    +enabled: bool
+    +write_traffic_enabled: bool
+    +write_alerts(alerts: Iterable[Any]): None
+    +write_traffic(packets: Iterable[Any]): None
+    -_to_dict(item: Any): dict
+    -_to_time(timestamp: float): datetime
+  }
+}
+
+package "agent.sniffer" {
+  class SnifferPipeline <<module>> {
+    +main(): None
+    +_enqueue_packet(packet): None
+    +_packet_to_dict(packet): dict?
+    +_update_flow(data: Dict[str, Any]): None
+    +_drain_flows(): List[dict]
+    +_sender_loop(): None
+    +_send_batch(session, batch): bool
+  }
+}
+
+PacketBatch "1" *-- "*" PacketData
+RuleEngine "1" *-- "*" BaseRule
+
+SynFloodRule -u-|> BaseRule
+SynAckImbalanceRule -u-|> BaseRule
+PortScanRule -u-|> BaseRule
+HorizontalScanRule -u-|> BaseRule
+MultiTargetScanRule -u-|> BaseRule
+UdpFloodRule -u-|> BaseRule
+IcmpFloodRule -u-|> BaseRule
+LargeIcmpRule -u-|> BaseRule
+TcpFlagAnomalyRule -u-|> BaseRule
+
+AnalyzerAPI ..> RuleEngine : uses
+AnalyzerAPI ..> InfluxDBWriter : uses
+AnalyzerAPI ..> PacketBatch : accepts
+AnalyzerAPI ..> Alert : returns
+
+RuleEngine ..> PacketData : reads fields
+InfluxDBWriter ..> Alert : writes alerts
+InfluxDBWriter ..> PacketData : writes traffic
+SnifferPipeline ..> AnalyzerAPI : POST /api/v1/traffic
+
+' Layout constraints for vertical Word-friendly rendering
+AnalyzerAPI -[hidden]down-> RuleEngine
+RuleEngine -[hidden]down-> InfluxDBWriter
+InfluxDBWriter -[hidden]down-> SnifferPipeline
+
+SynFloodRule -[hidden]down-> SynAckImbalanceRule
+SynAckImbalanceRule -[hidden]down-> PortScanRule
+PortScanRule -[hidden]down-> HorizontalScanRule
+HorizontalScanRule -[hidden]down-> MultiTargetScanRule
+MultiTargetScanRule -[hidden]down-> UdpFloodRule
+UdpFloodRule -[hidden]down-> IcmpFloodRule
+IcmpFloodRule -[hidden]down-> LargeIcmpRule
+LargeIcmpRule -[hidden]down-> TcpFlagAnomalyRule
+
+@enduml
